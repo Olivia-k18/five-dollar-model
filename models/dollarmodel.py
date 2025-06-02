@@ -92,7 +92,7 @@ class DollarModel():
         os.makedirs(self.model_path, exist_ok=True)
         self.sample_path = 'dollarmodel_out/' + self.model_name + "/samples/"
         os.makedirs(self.sample_path, exist_ok=True)
-        self.tiles = self.extract_tiles('.\map_tileset\pokemon_tileset.png')
+        self.tiles = self.mario_tiles()
 
         self.img_x = img_shape[0]
         self.img_y = img_shape[1]
@@ -279,7 +279,7 @@ class DollarModel():
         plt.savefig(save_path, bbox_inches='tight')
         plt.close(fig)
 
-    def extract_tiles(self, image_file, tile_size=8, num_tiles=16):
+    def extract_tiles(self, image_file, tile_size=16, num_tiles=13):
         image = Image.open(image_file)
         tiles = []
         rows = cols = int(np.sqrt(num_tiles))
@@ -290,19 +290,84 @@ class DollarModel():
                 tiles.append(tile)
         return tiles
     
+
+    
+
+
     # Use tiles to construct image of map
-    def map_to_image(self, ascii_map, tile_size=8):
+    def map_to_image(self, ascii_map, tile_size=16):
+        
         tiles = self.tiles
         rows, cols = ascii_map.shape
         image = Image.new('RGB', (cols * tile_size, rows * tile_size))
 
-        for i in range(rows):
-            for j in range(cols):
-                tile_index = ascii_map[i, j]
+        for row in range(rows):
+            for col in range(cols):
+                tile_index = ascii_map[row, col]
                 tile = tiles[tile_index]
-                image.paste(tile, (j * tile_size, i * tile_size))
+                image.paste(tile, (col * tile_size, row * tile_size))
 
         return image
+
+
+    def mario_tiles(self):
+        """
+        Maps integers 0-15 to 16x16 pixel sprites from mapsheet.png.
+
+        Returns:
+            A list of 16x16 pixel tile images for Mario.
+        """
+
+        # DEBUGGING
+        #raise ValueError("Why is this being called!")
+
+        _sprite_sheet = Image.open("map_tileset//mapsheet.png")
+
+        # Hardcoded coordinates for the first 16 tiles (row, col)
+        tile_coordinates = [
+            (2,5),    # 0 = Sky
+            (2,2),    # 1 = left upper lip of pipe
+            (3,2),    # 2 = right upper lip of pipe
+            (0,1),    # 3 = question block with power up
+            (3,0),    # 4 = Cannon head
+            (7,4),    # 5 = enemy
+            (2,1),    # 6 = question block with coin
+            (2,6),    # 7 = breakable brick block
+            (1,0),    # 8 = solid block/floor
+            (4,2),    # 9 = left edge of pipe body
+            (5,2),    # 10 = right edge of pipe body
+            (4,0),    # 11 = Cannon support (should be 5,0 sometimes?)
+            (7,1),    # 12 = coin
+            # Tile right below decides what the padded tile is (sky currently)
+            (2,5),    # 13 = Padding (sky)
+            (0,6),    # 14 = Nothing
+            (1,6),    # 15 = Nothing (extra just in case)
+        ]
+
+        # Extract each tile as a 16x16 image
+        tile_images = []
+        for col, row in tile_coordinates:
+            left = col * 16
+            upper = row * 16
+            right = left + 16
+            lower = upper + 16
+            tile = _sprite_sheet.crop((left, upper, right, lower))
+            tile_images.append(tile)
+
+        # Add a blank tile for the extra tile (padding)
+        blank_tile = Image.new('RGB', (16, 16), color=(128, 128, 128))  # Gray or any color
+        tile_images.append(blank_tile)
+
+        # Save each tile image as tile_X.png for inspection
+        #for idx, tile_img in enumerate(tile_images):
+        #    tile_img.save(f"tile_{idx}.png")
+
+        return tile_images
+
+
+
+
+
 
     def sprite_to_image(self, image):
         # Create an empty array with shape of the image and 3 color channels
@@ -466,7 +531,7 @@ def train(model, epochs, batch_size, sample_interval=50):
 input_shape = (16, 16, 13)
 epochs = 100
 batch_size = 256
-encpic = DollarModel(model_name="test_modelname", img_shape=input_shape, lr=0.0005, embedding_dim=384, z_dim=5, filter_count=128, kern_size=5, num_res_blocks=3, dataset_type='map', 
+encpic = DollarModel(model_name="new_model", img_shape=input_shape, lr=0.0005, embedding_dim=384, z_dim=5, filter_count=128, kern_size=5, num_res_blocks=3, dataset_type='map', 
                      data_path='datasets\SMB1_LevelsAndCaptions-regular.json')
 train(encpic, epochs, batch_size, sample_interval=10)
 
