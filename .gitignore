@@ -1,3 +1,4 @@
 *.keras
 *.png
 *.json
+*.pyc

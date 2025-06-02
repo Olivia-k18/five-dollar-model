@@ -104,15 +104,7 @@ class DollarModel():
         self.load_data(scaling_factor=6)
 
 
-        if dataset_type == 'map':
-            self.num_upsample = 2
-            self.gen_to_image = self.map_to_image
-        elif dataset_type == 'emoji':
-            self.num_upsample = 2
-            self.gen_to_image = self.sprite_to_image
-        elif dataset_type == 'sprite':
-            self.num_upsample = 1
-            self.gen_to_image = self.sprite_to_image
+        self.gen_to_image = self.map_to_image
 
         self.create_model()
         print(len(self.embeddings))
@@ -147,12 +139,9 @@ class DollarModel():
                 film_param_gen = Dense(2 * self.filter_count, activation=None, name="film_param_gen_dense" + str(i))(embedding)
                 x = FiLMLayer()([x, film_param_gen])
         
-        if self.dataset_type == 'map':
-            # output
-            x = ZeroPadding2D(padding=(1, 1))(x)
-            img = Conv2D(self.channels, kernel_size=3, padding="valid", activation="softmax", kernel_initializer=self.init)(x)
-        else:
-            img = Conv2D(self.channels, kernel_size=3, padding="same", activation="softmax", kernel_initializer=self.init)(x)
+        # output
+        x = ZeroPadding2D(padding=(1, 1))(x)
+        img = Conv2D(self.channels, kernel_size=9, padding="valid", activation="softmax", kernel_initializer=self.init)(x)
 
         self.generator = Model([noise, embedding], img, name="Generator")
         self.generator.compile(loss='categorical_crossentropy', optimizer=Adam(self.lr), metrics=['accuracy'])
@@ -199,9 +188,6 @@ class DollarModel():
         self.images, self.labels, self.embeddings, test_size=24, random_state=seed)
 
 
-            
-        
-
     def _augment_caption(self, caption):
         """Shuffles period-separated phrases in the caption."""
         phrases = caption[:-1].split(". ") # [:-1] removes the last period
@@ -209,32 +195,6 @@ class DollarModel():
         return ". ".join(phrases) + "."
 
 
-        
-
-
-    """def load_data(self, scaling_factor=6):
-        path = self.data_path
-        data = np.load(path, allow_pickle=True).item()
-        print(np.array(data['images']).shape)
-        self.images = np.array(data['images'])
-        #print(self.images[0])
-        self.labels = data['labels']
-        #print(self.labels[0])
-        self.embeddings = data['embeddings']
-        #print(self.embeddings[0])
-        if isinstance(self.embeddings, list):
-            self.embeddings = np.array(self.embeddings)
-        self.embeddings = self.embeddings * scaling_factor
-
-        if self.dataset_type == 'emoji' or self.dataset_type == 'sprite':
-            self.color_palette = data['color_palette']
-            self.color_palette_rgb = [tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)) for color in self.color_palette]
-            
-        self.images, self.images_test, self.labels, self.labels_test, self.embeddings, self.embeddings_test = train_test_split(
-        self.images, self.labels, self.embeddings, test_size=24, random_state=seed)
-
-        print("Train size: ", len(self.labels))
-        print("Test size: ", len(self.labels_test))"""
 
 
     # export the model to a path
@@ -277,22 +237,9 @@ class DollarModel():
         plt.subplots_adjust(hspace=0.5)  # adjust space between rows
         plt.tight_layout()
         plt.savefig(save_path, bbox_inches='tight')
-        plt.close(fig)
-
-    def extract_tiles(self, image_file, tile_size=16, num_tiles=13):
-        image = Image.open(image_file)
-        tiles = []
-        rows = cols = int(np.sqrt(num_tiles))
-
-        for i in range(rows):
-            for j in range(cols):
-                tile = image.crop((j * tile_size, i * tile_size, (j + 1) * tile_size, (i + 1) * tile_size))
-                tiles.append(tile)
-        return tiles
-    
+        plt.close(fig)    
 
     
-
 
     # Use tiles to construct image of map
     def map_to_image(self, ascii_map, tile_size=16):
@@ -366,18 +313,6 @@ class DollarModel():
 
 
 
-
-
-
-    def sprite_to_image(self, image):
-        # Create an empty array with shape of the image and 3 color channels
-        decoded_image = np.zeros((*image.shape, 3), dtype=np.uint8)
-
-        for i in range(len(self.color_palette_rgb)):
-            decoded_image[image == i] = self.color_palette_rgb[i]
-
-        pil_image = Image.fromarray(decoded_image)
-        return pil_image
 
 
 ######################################################################
