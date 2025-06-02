@@ -252,9 +252,9 @@ def test_set_gen(ep, model, epoch_dir, test_set):
         correct_images = batch[1]
         
         predictions = model(embeddings.to(device), torch.rand(len(embeddings), 5).to(device))
-        print(predictions.shape)
+        
         argmaxed_gens = predictions.argmax(dim=1)
-        print(argmaxed_gens.shape)
+        
 
         model.render_images(images=argmaxed_gens, labels=labels, correct_images=np.argmax(correct_images, axis=-1), title=title, save_path=file_name)
 
@@ -289,6 +289,8 @@ def train(model, EPOCHS):
             loss.backward()
             optimizer.step()
         print(f"Epoch {epoch}: Loss = {loss_metric_train[epoch]}")
+        if epoch%10==0:
+            do_renders(model, epoch, test_set)
     
     do_renders(model, epoch, test_set)
 
@@ -303,4 +305,4 @@ if __name__ == "__main__":
     model=Gen(
         model_name="temp"
     )
-    train(model, 5)
+    train(model, 100)
