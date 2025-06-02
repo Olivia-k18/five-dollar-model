@@ -6,11 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from sklearn.model_selection import train_test_split
 
-seed = 7499629
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"**--Using {device}--**")
 
 class imageDataSet(Dataset):
 
@@ -78,8 +76,8 @@ class Gen(nn.Module):
         return self.softmax(x)
 
 
-def load_data(path, scaling_factor=6):
-	data = np.load(path, allow_pickle=True).item()
+def load_data(path, scaling_factor=6, batch_size=256):
+    data = np.load(path, allow_pickle=True).item()
     images = np.array(data['images'])
     labels = data['labels']
 
@@ -95,13 +93,13 @@ def load_data(path, scaling_factor=6):
     test_dataset = [embeddings_test, images_test]
 
     train_set = DataLoader(imageDataSet(train_dataset),
-                       batch_size=BATCH_SIZE,
+                       batch_size=batch_size,
                        shuffle=True,
                        num_workers= 8 if device == 'cuda' else 1,
                        pin_memory=(device=="cuda")) # Makes transfer from the CPU to GPU faster
 
     test_set = DataLoader(imageDataSet(test_dataset),
-                      batch_size=BATCH_SIZE,
+                      batch_size=batch_size,
                       shuffle=True,
                       num_workers= 8 if device == 'cuda' else 1,
                       pin_memory=(device=="cuda")) # Makes transfer from the CPU to GPU faster
@@ -110,23 +108,34 @@ def load_data(path, scaling_factor=6):
 
 def train(model, EPOCHS):
 
-	train_set, test_set = load_data("maps_gpt4_aug.npy")
+    train_set, test_set = load_data('./datasets/maps_noaug.npy')
 
-	loss_metric_train = torch.zeros(EPOCHS).to(device)
+    loss_metric_train = torch.zeros(EPOCHS).to(device)
 
-	model.to(device)
+    model.to(device)
 
-	optimizer = optim.Adam(model.parameters())
+    optimizer = optim.Adam(model.parameters())
+    
+    for epoch in range(EPOCHS):
+        for embeddings, ytrue in train_set:
+            optimizer.zero_grad()
+            outputs = model(embeddings.to(device), torch.rand(len(embeddings), 5).to(device))
+            loss = nn.NLLLoss()(torch.log(outputs), ytrue.argmax(dim=1).to(device))
 
-	for epoch in range(EPOCHS):
+            loss_metric_train[epoch] += loss
 
-		for embeddings, ytrue in train_set:
+            loss.backward()
+            optimizer.step()
 
-		    optimizer.zero_grad()
-		    outputs = model(emb.to(device), torch.rand(len(emb), 5).to(device))
-		    loss = nn.NLLLoss()(torch.log(outputs), ytrue.argmax(dim=1).to(device))
 
-		    loss_metric_train[epoch] += loss
+if __name__ == "__main__":
+    seed = 7499629
 
-		    loss.backward()
-		    optimizer.step()
+    input_shape = (10, 10, 16)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"**--Using {device}--**")
+    model=Gen(
+        model_name="temp"
+    )
+    train(model, 100)

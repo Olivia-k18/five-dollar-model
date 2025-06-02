@@ -18,6 +18,11 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import csv
 import json
+import random
+import sentence_transformers_helper as st_helper
+from transformers import AutoTokenizer, TFAutoModel
+
+
 
 seed = 32
 np.random.seed(seed)
@@ -145,7 +150,7 @@ class DollarModel():
         if self.dataset_type == 'map':
             # output
             x = ZeroPadding2D(padding=(1, 1))(x)
-            img = Conv2D(self.channels, kernel_size=9, padding="valid", activation="softmax", kernel_initializer=self.init)(x)
+            img = Conv2D(self.channels, kernel_size=3, padding="valid", activation="softmax", kernel_initializer=self.init)(x)
         else:
             img = Conv2D(self.channels, kernel_size=3, padding="same", activation="softmax", kernel_initializer=self.init)(x)
 
@@ -153,16 +158,70 @@ class DollarModel():
         self.generator.compile(loss='categorical_crossentropy', optimizer=Adam(self.lr), metrics=['accuracy'])
         self.generator.summary()
         #plot_model(self.generator, to_file=os.path.join(self.model_path, 'gen_model_graph.png'), show_shapes=True)
+        
 
 
+    def load_data(self, num_tiles=13, scaling_factor=6):
 
-    
-    def load_data(self, scaling_factor=6):
+        tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/multi-qa-MiniLM-L6-cos-v1")
+        model = TFAutoModel.from_pretrained("sentence-transformers/multi-qa-MiniLM-L6-cos-v1")
+
+
+        json_path = self.data_path
+        print(f"Loading data from {json_path}...")
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+        
+        one_hot_scenes = []
+        captions = []
+        
+
+        for sample in data:
+            scene_tensor = tf.convert_to_tensor(sample["scene"], dtype=tf.int64)
+            one_hot_scene = tf.one_hot(scene_tensor, depth=num_tiles, dtype=tf.float32)
+            
+            augmented_caption = self._augment_caption(sample["caption"])
+
+            one_hot_scenes.append(np.array(one_hot_scene))
+            captions.append(augmented_caption)
+        
+        encoded_captions = st_helper.encode(captions, tokenizer=tokenizer, model=model)
+
+
+        self.images=np.array(one_hot_scenes)
+        self.labels=np.array(captions)
+        self.embeddings=np.array(encoded_captions)
+
+        
+        self.embeddings = self.embeddings * scaling_factor
+
+        self.images, self.images_test, self.labels, self.labels_test, self.embeddings, self.embeddings_test = train_test_split(
+        self.images, self.labels, self.embeddings, test_size=24, random_state=seed)
+
+
+            
+        
+
+    def _augment_caption(self, caption):
+        """Shuffles period-separated phrases in the caption."""
+        phrases = caption[:-1].split(". ") # [:-1] removes the last period
+        random.shuffle(phrases)  # Shuffle phrases
+        return ". ".join(phrases) + "."
+
+
+        
+
+
+    """def load_data(self, scaling_factor=6):
         path = self.data_path
         data = np.load(path, allow_pickle=True).item()
+        print(np.array(data['images']).shape)
         self.images = np.array(data['images'])
+        #print(self.images[0])
         self.labels = data['labels']
+        #print(self.labels[0])
         self.embeddings = data['embeddings']
+        #print(self.embeddings[0])
         if isinstance(self.embeddings, list):
             self.embeddings = np.array(self.embeddings)
         self.embeddings = self.embeddings * scaling_factor
@@ -175,7 +234,7 @@ class DollarModel():
         self.images, self.labels, self.embeddings, test_size=24, random_state=seed)
 
         print("Train size: ", len(self.labels))
-        print("Test size: ", len(self.labels_test))
+        print("Test size: ", len(self.labels_test))"""
 
 
     # export the model to a path
@@ -404,10 +463,11 @@ def train(model, epochs, batch_size, sample_interval=50):
 
     return loss, acc, val_loss, val_acc, val_loss[lowest_val_loss_epoch], val_acc[highest_val_acc_epoch]
 
-input_shape = (10, 10, 16)
+input_shape = (16, 16, 13)
 epochs = 100
 batch_size = 256
-encpic = DollarModel(model_name="test_modelname", img_shape=input_shape, lr=0.0005, embedding_dim=384, z_dim=5, filter_count=128, kern_size=5, num_res_blocks=3, dataset_type='map', data_path='datasets/maps_noaug.npy')
+encpic = DollarModel(model_name="test_modelname", img_shape=input_shape, lr=0.0005, embedding_dim=384, z_dim=5, filter_count=128, kern_size=5, num_res_blocks=3, dataset_type='map', 
+                     data_path='datasets\SMB1_LevelsAndCaptions-regular.json')
 train(encpic, epochs, batch_size, sample_interval=10)
 
 
