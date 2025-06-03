@@ -11,6 +11,10 @@ import os
 import matplotlib.pyplot as plt
 import textwrap
 from PIL import Image
+import sentence_transformers_helper_torch as st_helper
+from transformers import AutoTokenizer, AutoModel
+import json
+import random
 
 
 
@@ -48,7 +52,7 @@ class ResBlock(nn.Module):
         return x1 + x
 
 class Gen(nn.Module):
-    def __init__(self, model_name, embedding_dim=384, z_dim=5, kern_size=7, filter_count=128, num_res_blocks=3):
+    def __init__(self, model_name, data_path, num_tiles=13, batch_size=256, embedding_dim=384, z_dim=5, kern_size=7, filter_count=128, num_res_blocks=3,):
         super().__init__()
 
         self.embedding_dim = embedding_dim
@@ -57,12 +61,14 @@ class Gen(nn.Module):
         self.filter_count = filter_count
         self.kern_size = kern_size
         self.num_res_blocks = num_res_blocks
+        self.data_path=data_path
+        self.num_tiles=num_tiles
+        self.batch_size=batch_size
 
         #new args
         self.sample_path = 'dollarmodel_out/' + self.model_name + "/samples/"
         self.gen_to_image = self.map_to_image
-        self.tiles = self.extract_tiles('.\map_tileset\pokemon_tileset.png')        
-        #self.tiles = self.mario_tiles()
+        self.tiles = self.mario_tiles()
 
 
 
@@ -74,7 +80,7 @@ class Gen(nn.Module):
             self.res_blocks.append(ResBlock(self.kern_size, self.filter_count, i < 2))
 
         self.padding = nn.ZeroPad2d(1)
-        self.last_conv = nn.Conv2d(in_channels=self.filter_count, out_channels=16, kernel_size=9)
+        self.last_conv = nn.Conv2d(in_channels=self.filter_count, out_channels=16, kernel_size=3)
         self.softmax = nn.Softmax(dim=1)
 
 
@@ -88,32 +94,20 @@ class Gen(nn.Module):
         x = self.last_conv(x)
         return self.softmax(x)
     
-    #replace with mario version later to test
-    def map_to_image(self, ascii_map, tile_size=8):
+    # Use tiles to construct image of map
+    def map_to_image(self, ascii_map, tile_size=16):
+        
         tiles = self.tiles
         rows, cols = ascii_map.shape
         image = Image.new('RGB', (cols * tile_size, rows * tile_size))
 
-        for i in range(rows):
-            for j in range(cols):
-                tile_index = ascii_map[i, j]
+        for row in range(rows):
+            for col in range(cols):
+                tile_index = ascii_map[row, col]
                 tile = tiles[tile_index]
-                image.paste(tile, (j * tile_size, i * tile_size))
+                image.paste(tile, (col * tile_size, row * tile_size))
 
         return image
-    
-
-    #temp method
-    def extract_tiles(self, image_file, tile_size=8, num_tiles=16):
-        image = Image.open(image_file)
-        tiles = []
-        rows = cols = int(np.sqrt(num_tiles))
-
-        for i in range(rows):
-            for j in range(cols):
-                tile = image.crop((j * tile_size, i * tile_size, (j + 1) * tile_size, (i + 1) * tile_size))
-                tiles.append(tile)
-        return tiles
     
 
     def mario_tiles(self):
@@ -210,7 +204,73 @@ class Gen(nn.Module):
         plt.close(fig)
 
 
-def load_data(path, scaling_factor=6, batch_size=256):
+
+    def load_data(self, num_tiles=13, scaling_factor=6):
+
+            tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/multi-qa-MiniLM-L6-cos-v1")
+            model = AutoModel.from_pretrained("sentence-transformers/multi-qa-MiniLM-L6-cos-v1")
+
+
+            json_path = self.data_path
+            print(f"Loading data from {json_path}...")
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+            
+            one_hot_scenes = []
+            captions = []
+            
+
+            for sample in data:
+                scene_tensor = torch.tensor(sample["scene"], dtype=torch.long)  # Convert scene to tensor
+                one_hot_scene = F.one_hot(scene_tensor, num_classes=self.num_tiles).float()
+
+                augmented_caption = self._augment_caption(sample["caption"])
+
+                one_hot_scenes.append(np.array(one_hot_scene))
+                captions.append(augmented_caption)
+            
+            encoded_captions = st_helper.encode(captions, tokenizer=tokenizer, model=model)
+
+
+            images=np.array(one_hot_scenes)
+            labels=np.array(captions)
+            embeddings=np.array(encoded_captions)
+
+            
+            embeddings = embeddings * scaling_factor
+
+            images, images_test, labels, labels_test, embeddings, embeddings_test = train_test_split(
+            images, labels, embeddings, test_size=24, random_state=seed)
+
+            train_dataset = [embeddings, images, labels]
+            test_dataset = [embeddings_test, images_test, labels_test]
+
+            self.train_set = DataLoader(imageDataSet(train_dataset),
+                            batch_size=self.batch_size,
+                            shuffle=True,
+                            num_workers= 8 if device == 'cuda' else 1,
+                            pin_memory=(device=="cuda"),
+                            persistent_workers=True) # Makes transfer from the CPU to GPU faster
+
+            self.test_set = DataLoader(imageDataSet(test_dataset),
+                            batch_size=self.batch_size,
+                            shuffle=True,
+                            num_workers= 8 if device == 'cuda' else 1,
+                            pin_memory=(device=="cuda"),
+                            persistent_workers=True) # Makes transfer from the CPU to GPU faster
+
+
+
+    def _augment_caption(self, caption):
+        """Shuffles period-separated phrases in the caption."""
+        phrases = caption[:-1].split(". ") # [:-1] removes the last period
+        random.shuffle(phrases)  # Shuffle phrases
+        return ". ".join(phrases) + "."
+
+
+
+
+"""def load_data(path, scaling_factor=6, batch_size=256):
     data = np.load(path, allow_pickle=True).item()
     images = np.array(data['images'])
     labels = data['labels']
@@ -238,7 +298,7 @@ def load_data(path, scaling_factor=6, batch_size=256):
                       num_workers= 8 if device == 'cuda' else 1,
                       pin_memory=(device=="cuda")) # Makes transfer from the CPU to GPU faster
 
-    return train_set, test_set
+    return train_set, test_set"""
 
 
 def test_set_gen(ep, model, epoch_dir, test_set):
@@ -269,8 +329,9 @@ def do_renders(model, ep, test_set):
 
 
 def train(model, EPOCHS):
+    model.load_data()
 
-    train_set, test_set = load_data('./datasets/maps_noaug.npy')
+    train_set, test_set = model.train_set, model.test_set
 
     loss_metric_train = torch.zeros(EPOCHS).to(device)
 
@@ -303,6 +364,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"**--Using {device}--**")
     model=Gen(
-        model_name="temp"
+        model_name="temp",
+        data_path="datasets\SMB1_LevelsAndCaptions-regular.json"
     )
     train(model, 100)

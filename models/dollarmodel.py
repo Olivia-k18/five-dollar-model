@@ -19,7 +19,7 @@ from tqdm import tqdm
 import csv
 import json
 import random
-import sentence_transformers_helper as st_helper
+import models.sentence_transformers_helper_tf as st_helper
 from transformers import AutoTokenizer, TFAutoModel
 
 
